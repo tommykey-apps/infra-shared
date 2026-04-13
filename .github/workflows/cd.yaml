@@ -9,7 +9,7 @@ env:
   AWS_REGION: ap-northeast-1
 
 jobs:
-  deploy:
+  deploy-infra:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,3 +29,46 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply tfplan
+
+  deploy-k8s:
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Wait for K3s kubeconfig
+        run: |
+          echo "Waiting for K3s kubeconfig in SSM..."
+          for i in $(seq 1 60); do
+            VALUE=$(aws ssm get-parameter --name "/shared/k3s/kubeconfig" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "placeholder")
+            if [ "$VALUE" != "placeholder" ]; then
+              echo "K3s kubeconfig is ready"
+              exit 0
+            fi
+            echo "Attempt $i/60: kubeconfig not ready, waiting 10s..."
+            sleep 10
+          done
+          echo "Timeout waiting for K3s kubeconfig"
+          exit 1
+
+      - name: Terraform Init
+        run: cd k8s && terraform init
+
+      - name: Deploy Helm releases first (cert-manager CRDs must exist before ClusterIssuer)
+        run: |
+          cd k8s
+          terraform apply -auto-approve \
+            -target=helm_release.cert_manager \
+            -target=helm_release.argocd \
+            -target=kubernetes_namespace.chat
+
+      - name: Deploy remaining resources
+        run: cd k8s && terraform apply -auto-approve
