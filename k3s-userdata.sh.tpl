@@ -5,6 +5,14 @@ set -ex
 export HOME=/root
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
+# --- Wait for network readiness ---
+echo "Waiting for network..."
+until curl -sf --connect-timeout 3 https://get.k3s.io > /dev/null 2>&1; do
+  echo "Network not ready, retrying..."
+  sleep 3
+done
+echo "Network is ready"
+
 # --- Public IP (from Terraform EIP) and Account ID ---
 PUBLIC_IP=${public_ip}
 TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
@@ -24,7 +32,7 @@ mirrors:
 YAML
 
 # --- Install K3s (two-step to avoid pipe issues) ---
-curl -sfL https://get.k3s.io -o /tmp/k3s-install.sh
+curl -sfL --connect-timeout 10 --retry 5 --retry-delay 5 https://get.k3s.io -o /tmp/k3s-install.sh
 chmod +x /tmp/k3s-install.sh
 INSTALL_K3S_EXEC="server --tls-san ${public_ip} --write-kubeconfig-mode 644" \
   K3S_TOKEN="${k3s_token}" \
