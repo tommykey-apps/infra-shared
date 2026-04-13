@@ -20,7 +20,7 @@ ACCOUNT_ID=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 
 echo "PUBLIC_IP=$${PUBLIC_IP}, ACCOUNT_ID=$${ACCOUNT_ID}"
 
-# --- ECR credential provider for K3s ---
+# --- ECR registry config for K3s ---
 mkdir -p /var/lib/rancher/k3s/agent/etc/containerd
 mkdir -p /etc/rancher/k3s
 
@@ -31,7 +31,7 @@ mirrors:
       - "https://$${ACCOUNT_ID}.dkr.ecr.${region}.amazonaws.com"
 YAML
 
-# --- Install K3s (two-step to avoid pipe issues) ---
+# --- Install K3s ---
 curl -sfL --connect-timeout 10 --retry 5 --retry-delay 5 https://get.k3s.io -o /tmp/k3s-install.sh
 chmod +x /tmp/k3s-install.sh
 INSTALL_K3S_EXEC="server --tls-san ${public_ip} --write-kubeconfig-mode 644" \
@@ -52,26 +52,7 @@ aws ssm put-parameter \
   --region ${region}
 echo "kubeconfig stored in SSM"
 
-# --- Install cert-manager ---
-/usr/local/bin/kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
-/usr/local/bin/kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
-/usr/local/bin/kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-echo "cert-manager ready"
-
-# --- Install ArgoCD (server-side apply for large CRDs) ---
-/usr/local/bin/kubectl create namespace argocd
-/usr/local/bin/kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-/usr/local/bin/kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s
-echo "ArgoCD ready"
-
-# --- Set ArgoCD to insecure mode (TLS handled by Traefik) ---
-/usr/local/bin/kubectl -n argocd patch configmap argocd-cmd-params-cm \
-  --type merge \
-  -p '{"data":{"server.insecure":"true"}}'
-/usr/local/bin/kubectl -n argocd rollout restart deployment argocd-server
-echo "ArgoCD insecure mode set"
-
-# --- Setup ECR image pull cron ---
+# --- Setup ECR image pull cron (token expires every 12h) ---
 cat > /usr/local/bin/ecr-login.sh <<'SCRIPT'
 #!/bin/bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -88,10 +69,7 @@ PASSWORD=$(aws ecr get-login-password --region $REGION)
 SCRIPT
 chmod +x /usr/local/bin/ecr-login.sh
 
-# Create chat namespace and initial ECR secret
-/usr/local/bin/kubectl create namespace chat --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -
-/usr/local/bin/ecr-login.sh
-
 # Setup cron for ECR token refresh (every 6 hours)
+mkdir -p /etc/cron.d
 echo "0 */6 * * * root /usr/local/bin/ecr-login.sh >> /var/log/ecr-login.log 2>&1" | tee /etc/crontab -a
 echo "Setup complete!"
