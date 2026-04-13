@@ -7,7 +7,7 @@ variable "region" {
 variable "project" {
   description = "Project name prefix for shared resources"
   type        = string
-  default     = "url-shortener"
+  default     = "shared"
 }
 
 variable "cluster_version" {
