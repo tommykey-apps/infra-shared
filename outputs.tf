@@ -13,29 +13,24 @@ output "public_subnets" {
   value       = module.vpc.public_subnets
 }
 
-output "cluster_name" {
-  description = "EKS cluster name"
-  value       = module.eks.cluster_name
+output "k3s_public_ip" {
+  description = "K3s server Elastic IP"
+  value       = aws_eip.k3s.public_ip
 }
 
-output "cluster_endpoint" {
-  description = "EKS cluster endpoint"
-  value       = module.eks.cluster_endpoint
+output "k3s_instance_id" {
+  description = "K3s EC2 instance ID"
+  value       = aws_instance.k3s.id
 }
 
-output "oidc_provider_arn" {
-  description = "EKS OIDC provider ARN"
-  value       = module.eks.oidc_provider_arn
+output "k3s_security_group_id" {
+  description = "K3s security group ID"
+  value       = aws_security_group.k3s.id
 }
 
-output "route53_zone_id" {
-  description = "Route53 zone ID for tommykeyapp.com"
-  value       = data.aws_route53_zone.main.zone_id
-}
-
-output "acm_certificate_arn" {
-  description = "Wildcard ACM certificate ARN"
-  value       = aws_acm_certificate.wildcard.arn
+output "k3s_iam_role_name" {
+  description = "K3s IAM role name (for attaching additional policies)"
+  value       = aws_iam_role.k3s.name
 }
 
 output "region" {
