@@ -143,6 +143,10 @@ resource "aws_instance" "k3s" {
     Name    = "${var.project}-k3s"
     Project = var.project
   }
+
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 # --- Elastic IP ---
